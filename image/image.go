@@ -1,16 +1,13 @@
-package main
+package image
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"image/color"
 	"image/png"
-	"os"
+	"io"
 	"strconv"
 	"strings"
-
-	"github.com/theotheradamsmith/verbose-octo-eureka/logic"
 )
 
 func process_pixel(pixel color.Color) (uint8, error) {
@@ -21,17 +18,10 @@ func process_pixel(pixel color.Color) (uint8, error) {
 	return 0, errors.New("Invalid pixel coloration detected")
 }
 
-func decode(imagePath string) (string, error) {
+func decode(file io.Reader) (string, error) {
 	var imageStr strings.Builder
 
-	f, ok := os.Open(imagePath)
-	if ok != nil {
-		return "", ok
-	}
-
-	defer f.Close()
-
-	decodedImage, ok := png.Decode(f)
+	decodedImage, ok := png.Decode(file)
 	if ok != nil {
 		return "", ok
 	}
@@ -71,28 +61,4 @@ func decode(imagePath string) (string, error) {
 	}
 
 	return imageStr.String(), nil
-}
-
-func main() {
-	fmt.Println("Hello, CTF!")
-	pFlag := flag.String("path", "", "path of the image to decode")
-	flag.Parse()
-	if *pFlag != "" {
-		f, ok := os.Open(*pFlag)
-		if ok != nil {
-			fmt.Println(ok)
-		}
-		defer f.Close()
-		object, ok := decode(f)
-		if ok != nil {
-			fmt.Println(ok)
-			return
-		}
-		if _, ok := logic.Check(object); ok != nil {
-			fmt.Println(ok)
-		} else {
-			fmt.Println("Congratulations! You have solved the puzzle!")
-		}
-	}
-	// read from .config file
 }
