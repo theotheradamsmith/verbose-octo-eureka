@@ -18,7 +18,7 @@ func process_pixel(pixel color.Color) (uint8, error) {
 	return 0, errors.New("Invalid pixel coloration detected")
 }
 
-func decode(file io.Reader) (string, error) {
+func Decode(file io.Reader) (string, error) {
 	var imageStr strings.Builder
 
 	decodedImage, ok := png.Decode(file)
