@@ -1,11 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"html/template"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -13,32 +19,38 @@ import (
 	"github.com/theotheradamsmith/verbose-octo-eureka/logic"
 )
 
-const indexHTML = `
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-    <title>File upload demo</title>
-  </head>
-  <body>
-    <form
-      id="form"
-      enctype="multipart/form-data"
-      action="/upload"
-      method="POST"
-    >
-      <input class="input file-input" type="file" name="file" multiple />
-      <button class="button" type="submit">Submit</button>
-    </form>
-  </body>
-</html>
-`
+type config struct {
+	host         string
+	readTimeout  time.Duration
+	writeTimeout time.Duration
+}
+
+type htmlServer struct {
+	server *http.Server
+	wg     sync.WaitGroup
+}
 
 type spaHandler struct {
 	staticPath string
-	indexPath  string
+}
+
+var homepageTpl *template.Template
+
+func init_assets() {
+	if t, err := ioutil.ReadFile("/var/www/build/templateIndexHtml"); err != nil {
+		panic(err)
+	} else {
+		homepageTpl = template.Must(template.New("homepage_view").Parse(string(t)))
+	}
+}
+
+func render(w http.ResponseWriter, r *http.Request, tpl *template.Template, name string, data interface{}) {
+	buf := new(bytes.Buffer)
+	if err := tpl.ExecuteTemplate(buf, name, data); err != nil {
+		fmt.Printf("\nRender Error: %v\n", err)
+		return
+	}
+	w.Write(buf.Bytes())
 }
 
 func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -46,86 +58,115 @@ func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
-	path = filepath.Join(h.staticPath, path)
-	_, err = os.Stat(path)
+	joined_path := filepath.Join(h.staticPath, path)
+	_, err = os.Stat(joined_path)
 	if os.IsNotExist(err) {
-		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		render(w, r, homepageTpl, "homepage_view", map[string]interface{}{})
 		return
 	} else if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// use http.FileServer to serve the static dir
-	http.FileServer(http.Dir(h.staticPath)).ServeHTTP(w, r)
+	if path != "/" {
+		http.FileServer(http.Dir(h.staticPath)).ServeHTTP(w, r)
+	}
+	render(w, r, homepageTpl, "homepage_view", map[string]interface{}{})
 }
 
-func uploadPost(w http.ResponseWriter, r *http.Request) {
-	const maxUploadSize = 1024 * 1024
+func handleUploadPost(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	const maxUploadSize = 1024 * 1024
 	r.ParseMultipartForm(maxUploadSize)
+	var err string = ""
 
 	file, _, ok := r.FormFile("file")
 	if ok != nil {
 		fmt.Fprintf(w, "<h1>File Error</h1><p>%s</p>", ok)
-		fmt.Fprintf(w, indexHTML)
-		return
+		err = ok.Error()
 	}
 	defer file.Close()
-	object, ok := image.Decode(file)
-	if ok != nil {
-		fmt.Fprintf(w, "<h1>Decode Error</h1><p>%s</p>", ok)
-		fmt.Fprintf(w, indexHTML)
-		return
-	}
-	if _, ok = logic.Check(object); ok != nil {
-		fmt.Fprintf(w, "<h1>Logic Check Error</h1><p>%s</p>", ok)
-		fmt.Fprintf(w, indexHTML)
-		return
+	if object, ok := image.Decode(file); ok != nil {
+		err = ok.Error()
 	} else {
-		fmt.Fprintf(w, "<h1>Congratulations!</h1><p>You have solved the puzzle!</p>")
+		if _, ok = logic.Check(object); ok != nil {
+			err = ok.Error()
+		} else {
+			fmt.Fprintf(w, "<h1>Congratulations!</h1><p>You have solved the puzzle!</p>")
+		}
 	}
+
+	data := map[string]interface{}{
+		"Error": err,
+	}
+	render(w, r, homepageTpl, "homepage_view", data)
+}
+
+func start(cfg config) *htmlServer {
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	router := mux.NewRouter()
+	router.HandleFunc("/upload", handleUploadPost).Methods(http.MethodPost)
+	spa := spaHandler{staticPath: "/var/www/"}
+	router.PathPrefix("/").Handler(spa)
+	server := htmlServer{
+		server: &http.Server{
+			Addr:           cfg.host,
+			Handler:        router,
+			ReadTimeout:    cfg.readTimeout,
+			WriteTimeout:   cfg.writeTimeout,
+			MaxHeaderBytes: 1 << 20,
+		},
+	}
+
+	server.wg.Add(1)
+
+	go func() {
+		fmt.Printf("\nServer: Service started: Host=%v\n", cfg.host)
+		log.Fatal(server.server.ListenAndServe())
+		server.wg.Done()
+	}()
+
+	return &server
+}
+
+func (server *htmlServer) stop() error {
+	// create context to attempt graceful 5 second shutdown
+	const timeout = 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	fmt.Printf("\nServer: Service stopping\n")
+
+	if err := server.server.Shutdown(ctx); err != nil {
+		// timeout on graceful shutdown? force close
+		if err := server.server.Close(); err != nil {
+			fmt.Printf("\nServer: Service stopping: Error=%v\n", err)
+			return err
+		}
+	}
+
+	// wait for the listener to report that it is closed
+	server.wg.Wait()
+	fmt.Printf("\nServer: Stopped\n")
+	return nil
 }
 
 func main() {
-	/*
-		fmt.Println("Hello, CTF!")
-		pFlag := flag.String("path", "", "path of the image to decode")
-		flag.Parse()
-		if *pFlag != "" {
-			f, ok := os.Open(*pFlag)
-			if ok != nil {
-				fmt.Println(ok)
-			}
-			defer f.Close()
-			object, ok := image.Decode(f)
-			if ok != nil {
-				fmt.Println(ok)
-				return
-			}
-			if _, ok := logic.Check(object); ok != nil {
-				fmt.Println(ok)
-			} else {
-				fmt.Println("Congratulations! You have solved the puzzle!")
-			}
-		} else {
-
-		}
-	*/
-	// server mode!
-	router := mux.NewRouter()
-
-	router.HandleFunc("/upload", uploadPost).Methods(http.MethodPost)
-
-	spa := spaHandler{staticPath: "/var/www/build", indexPath: "index.html"}
-	router.PathPrefix("/").Handler(spa)
-	srv := &http.Server{
-		Handler:      router,
-		Addr:         ":80",
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
+	init_assets()
+	serverCfg := config{
+		host:         ":80",
+		readTimeout:  15 * time.Second,
+		writeTimeout: 15 * time.Second,
 	}
-	log.Fatal(srv.ListenAndServe())
-	//log.Fatal(http.ListenAndServe(":80", router))
-	// read from .config file
+
+	server := start(serverCfg)
+	defer server.stop()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	<-sigChan
+	fmt.Println("main: shutting down")
 }
