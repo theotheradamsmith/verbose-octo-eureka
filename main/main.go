@@ -11,8 +11,6 @@ import (
 )
 
 func handleUploadPost(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Handling POST")
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	const maxUploadSize = 1024 * 1024
@@ -28,7 +26,7 @@ func handleUploadPost(w http.ResponseWriter, r *http.Request) {
 		if object, ok := image.Decode(file); ok != nil {
 			err = ok.Error()
 		} else {
-			fmt.Fprintf(w, object)
+			//fmt.Fprintf(w, object)
 			if _, ok = logic.Check(object); ok != nil {
 				err = ok.Error()
 			} else {
