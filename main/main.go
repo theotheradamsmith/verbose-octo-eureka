@@ -28,6 +28,7 @@ func handleUploadPost(w http.ResponseWriter, r *http.Request) {
 		if object, ok := image.Decode(file); ok != nil {
 			err = ok.Error()
 		} else {
+			fmt.Fprintf(w, object)
 			if _, ok = logic.Check(object); ok != nil {
 				err = ok.Error()
 			} else {
