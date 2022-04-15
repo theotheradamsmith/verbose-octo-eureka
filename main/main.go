@@ -39,7 +39,8 @@ func handleUploadPost(w http.ResponseWriter, r *http.Request) {
 	//render(w, r, homepageTpl, "homepage_view", data)
 }
 
-type appConfig struct {
+type config struct {
+	port string
 }
 
 func main() {
@@ -52,8 +53,15 @@ func main() {
 		panic(fmt.Errorf("Fatal error config file: %w\n", err))
 	}
 
+	port := fmt.Sprintf(":%s", viper.GetString("port"))
+	if port == ":" {
+		log.Print("Error in configuration file: 'port' not found. Defaulting to 8000.")
+		port = ":8000"
+	}
+
 	router := mux.NewRouter()
 	router.HandleFunc("/", handleUploadPost).Methods(http.MethodPost)
 	http.Handle("/", router)
-	log.Fatal(http.ListenAndServe(":8000", router))
+	log.Print("Listening on port ", port)
+	log.Fatal(http.ListenAndServe(port, router))
 }
