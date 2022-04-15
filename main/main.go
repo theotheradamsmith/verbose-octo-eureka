@@ -39,10 +39,6 @@ func handleUploadPost(w http.ResponseWriter, r *http.Request) {
 	//render(w, r, homepageTpl, "homepage_view", data)
 }
 
-type config struct {
-	port string
-}
-
 func main() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("json")
