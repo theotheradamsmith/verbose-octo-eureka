@@ -1,5 +1,5 @@
 BIN = verify
-VERIFY_SRC = src/main/main.go
+VERIFY_SRC = src/main.go
 
 all: $(BIN)
 
