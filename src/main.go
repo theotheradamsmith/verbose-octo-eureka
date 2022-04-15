@@ -47,6 +47,7 @@ func main() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("json")
 	viper.AddConfigPath("$HOME/.appname")
+	viper.AddConfigPath("./src")
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
 	if err != nil {
