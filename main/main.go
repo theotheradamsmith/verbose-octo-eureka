@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/spf13/viper"
 	"github.com/theotheradamsmith/verbose-octo-eureka/image"
 	"github.com/theotheradamsmith/verbose-octo-eureka/logic"
 )
@@ -38,7 +39,19 @@ func handleUploadPost(w http.ResponseWriter, r *http.Request) {
 	//render(w, r, homepageTpl, "homepage_view", data)
 }
 
+type appConfig struct {
+}
+
 func main() {
+	viper.SetConfigName("config")
+	viper.SetConfigType("json")
+	viper.AddConfigPath("$HOME/.appname")
+	viper.AddConfigPath(".")
+	err := viper.ReadInConfig()
+	if err != nil {
+		panic(fmt.Errorf("Fatal error config file: %w\n", err))
+	}
+
 	router := mux.NewRouter()
 	router.HandleFunc("/", handleUploadPost).Methods(http.MethodPost)
 	http.Handle("/", router)
