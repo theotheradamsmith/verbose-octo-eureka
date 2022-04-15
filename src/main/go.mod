@@ -1,10 +1,10 @@
-module github.com/theotheradamsmith/verbose-octo-eureka/main
+module github.com/theotheradamsmith/verbose-octo-eureka/src/main
 
 go 1.17
 
 require (
-	github.com/theotheradamsmith/verbose-octo-eureka/image v1.0.0
-	github.com/theotheradamsmith/verbose-octo-eureka/logic v1.0.0
+	github.com/theotheradamsmith/verbose-octo-eureka/src/image v1.0.0
+	github.com/theotheradamsmith/verbose-octo-eureka/src/logic v1.0.0
 )
 
 require (
